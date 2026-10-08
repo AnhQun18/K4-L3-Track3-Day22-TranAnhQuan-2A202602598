@@ -1,13 +1,13 @@
 # Bài phản tư — Lab 22 (căn chỉnh mô hình bằng DPO/ORPO)
 
 **Tên:** Trần Anh Quân
-**Khoá:** K4 · L3 · Track 3 · Mã học viên 2A202602598 (theo tên thư mục bài nộp)
+**Khoá:** K4 · L3 · Track 3 · Mã học viên 2A202602598
 **Tier đã chạy:** T4
-**Ngày:** 2026-10-09; phiên Colab chạy ngày 2026-10-08
+**Ngày:** 2026-10-08; phiên Colab chạy ngày 2026-10-08
 
 > Số liệu lấy từ `adapters/dpo/dpo_metrics.json`, `data/pref/stats.json`,
 > `data/eval/judge_summary.json`, `data/eval/side_by_side.jsonl` và notebook
-> `colab/Lab22_DPO_T4_Core_executed.ipynb`. Bài phản tư được hỗ trợ tổng hợp bằng Codex.
+> `colab/Lab22_DPO_T4_Core_executed.ipynb`.
 > Không huấn luyện lại hoặc sửa các đầu ra đã chạy.
 
 ## 1. Cấu hình
