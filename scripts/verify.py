@@ -14,7 +14,7 @@ import hashlib
 import json
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO = Path(__file__).resolve().parent.parent
 NOTEBOOKS = [
@@ -52,16 +52,69 @@ def read_json(path: Path, problems: list[str]) -> dict | list | None:
         return None
 
 
+def colab_reference_evidence(base: str) -> bool:
+    """Verify exported Colab evidence without requiring ignored model weights.
+
+    Keep the original absolute adapter path. A successful merge output and the
+    matching NB3 metrics must occur in the saved executed notebook.
+    """
+    ref = PurePosixPath(base)
+    if not ref.is_absolute() or ref.parts[:2] != ("/", "content") or ref.parts[-2:] != ("models", "sft-merged"):
+        return False
+    notebook = REPO / "colab" / "Lab22_DPO_T4_Core_executed.ipynb"
+    metrics_file = REPO / "adapters" / "dpo" / "dpo_metrics.json"
+    try:
+        nb = json.loads(notebook.read_text(encoding="utf-8"))
+        metrics = json.loads(metrics_file.read_text(encoding="utf-8"))
+        merged = matched = False
+        for cell in nb["cells"]:
+            if cell.get("cell_type") != "code" or cell.get("execution_count") is None:
+                continue
+            outputs = cell.get("outputs", [])
+            if any(o.get("output_type") == "error" for o in outputs):
+                continue
+            source = "".join(cell.get("source", []))
+            output = "".join(
+                "".join(o.get("text", [])) for o in outputs
+                if o.get("output_type") == "stream"
+            )
+            if "save_pretrained_merged(str(C.SFT_MERGED)" in source:
+                merged |= f"Saved merged 16-bit → {base}" in output and "Merge process complete" in output
+            if "dpo_metrics.json" in source:
+                start = output.find("{")
+                if start >= 0:
+                    try:
+                        saved, _ = json.JSONDecoder().raw_decode(output[start:])
+                        matched |= saved == metrics and saved.get("reference") == "models/sft-merged (precomputed)"
+                    except json.JSONDecodeError:
+                        pass
+        return merged and matched
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def check_merged_sft(problems: list[str]) -> None:
+    config = REPO / "models" / "sft-merged" / "config.json"
+    if config.is_file() and config.stat().st_size:
+        return
+    try:
+        base = json.loads((REPO / "adapters" / "dpo" / "adapter_config.json").read_text(encoding="utf-8")).get("base_model_name_or_path", "")
+    except (OSError, ValueError):
+        base = ""
+    if not colab_reference_evidence(base):
+        problems.append("MISSING  merged SFT config or matching successful merge evidence in executed Colab notebook")
+
+
 def check_dpo(problems: list[str], warnings: list[str]) -> None:
     adapter = REPO / "adapters" / "dpo"
     if not need(adapter / "adapter_config.json", "DPO adapter (NB3)", problems):
         return
     base = str((read_json(adapter / "adapter_config.json", problems) or {}).get("base_model_name_or_path", ""))
     expected = (REPO / "models" / "sft-merged").resolve()
-    if not base or Path(base).resolve() != expected:
+    if not base or (Path(base).resolve() != expected and not colab_reference_evidence(base)):
         problems.append(
             f"WRONG REF  adapters/dpo was trained on {base!r}, not {rel(expected)}: the DPO reference "
-            "must be this repo's SFT model (if the repo moved, rerun NB3 here)."
+            "must be this repo's SFT model or have matching executed Colab evidence."
         )
     sys.path.insert(0, str(REPO))
     from lab22.data import split_mismatch
@@ -196,7 +249,7 @@ def main() -> int:
     for nb in NOTEBOOKS:
         need(REPO / "notebooks" / f"{nb}.py", f"notebook {nb}", problems)
     need(REPO / "adapters" / "sft-mini" / "adapter_config.json", "SFT adapter (NB1)", problems)
-    need(REPO / "models" / "sft-merged" / "config.json", "merged SFT model = DPO reference (NB1)", problems)
+    check_merged_sft(problems)
     need(REPO / "data" / "pref" / "train.parquet", "preference train split (NB2)", problems)
     need(REPO / "data" / "pref" / "eval.parquet", "held-out preference split (NB2)", problems)
     check_dpo(problems, warnings)

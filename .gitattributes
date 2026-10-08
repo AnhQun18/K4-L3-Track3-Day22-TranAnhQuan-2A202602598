@@ -1,0 +1,3 @@
+# Preserve exact bytes used by SHA-256 evidence checks.
+data/eval/side_by_side.jsonl -text
+colab/Lab22_DPO_T4_Core_executed.ipynb -text
